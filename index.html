@@ -80,14 +80,44 @@
       background: #bdbdbd;
       color: #333;
     }
+    #loadingScreen {
+      position: fixed;
+      left:0; top:0; width:100vw; height:100vh;
+      background:#222;
+      color: #ffd600;
+      font-size:2.2em;
+      display: flex; flex-direction: column;
+      justify-content: center; align-items: center;
+      z-index: 999;
+    }
+    #loadingProgress {
+      margin-top:1.1em;
+      width:300px;
+      height:22px;
+      background:#444;
+      border-radius:12px;
+      overflow:hidden;
+    }
+    #loadingBar {
+      background:#ffd600;
+      height:100%;
+      width:0%;
+      transition:width 0.22s;
+    }
     @media (max-width: 650px) {
       canvas { max-width: 99vw; max-height: 85vw; }
       .dialog { padding: 1.3em 0.8em 1.3em 0.8em; }
+      #loadingProgress { width: 80vw; }
     }
   </style>
 </head>
 <body>
-  <div id="container">
+  <div id="loadingScreen">
+    <div>ローディング中...</div>
+    <div id="loadingProgress"><div id="loadingBar"></div></div>
+    <div id="loadingMsg" style="font-size:0.7em; margin-top:10px;"></div>
+  </div>
+  <div id="container" style="display:none;">
     <canvas id="gameCanvas" width="640" height="640"></canvas>
   </div>
   <div id="continueUI" class="dialog-bg" style="display:none;">
@@ -106,7 +136,7 @@
   <script>
   // --------- 各種定数 ---------
   const BOARD_SIZE = 5;
-  const TILE = 128; // キャンバス640x640固定
+  const TILE = 128;
   const CANVAS_SIZE = TILE * BOARD_SIZE;
   const PIECE_SIZE = 96;
   const ANIM_FRAMES = 58;
@@ -143,7 +173,7 @@
   let selectedMoves = [];
   let turn = "player";
   let turnCount = 1;
-  let result = null;   // "win"/"lose"/"draw"
+  let result = null;
   let showContinue = false;
   let aiHighlightPiece = null;
   let aiHighlightMoves = [];
@@ -160,13 +190,14 @@
 
   // BGM管理
   let bgmNow = "";
-  let bgmPlaying = false;
 
   // --------- 初期化 ---------
   window.onload = async function() {
     canvas = document.getElementById("gameCanvas");
     ctx = canvas.getContext("2d");
     await loadAssets();
+
+    // 必要な初期化処理を呼び出す
     initBoard();
     drawAll();
 
@@ -175,7 +206,10 @@
 
     // イベント
     canvas.addEventListener("click", handleCanvasClick);
-    document.getElementById("btn-yes").onclick = ()=>{ showContinue=false; result=null; turn="player"; turnCount=1; initBoard(); drawAll(); playBGM("board_bgm"); hideContinueDialog(); };
+    document.getElementById("btn-yes").onclick = ()=>{
+      showContinue=false; result=null; turn="player"; turnCount=1;
+      initBoard(); drawAll(); playBGM("board_bgm"); hideContinueDialog();
+    };
     document.getElementById("btn-no").onclick = ()=>{ window.close(); };
     window.addEventListener("resize", resizeCanvas, false);
     resizeCanvas();
@@ -187,22 +221,42 @@
 
   // --------- アセット読込 ---------
   async function loadAssets() {
-    // 駒画像
+    const loadingBar = document.getElementById('loadingBar');
+    const loadingMsg = document.getElementById('loadingMsg');
+    const total = Object.keys(PIECE_IMAGES).length + ANIM_FRAMES + Object.keys(SOUNDS).length;
+    let loaded = 0;
+    // 画像
     for(let k in PIECE_IMAGES) {
       images[k] = await loadImage(PIECE_IMAGES[k]);
+      loaded++; updateLoadingBar();
+      loadingMsg.textContent = `${k}画像 読み込み中...`;
     }
     // 戦闘アニメ
     for(let i=1;i<=ANIM_FRAMES;i++){
       let fname = ANIM_PATTERN.replace("{n}", String(i).padStart(4,"0"));
       animFrames.push(await loadImage(fname));
+      loaded++; updateLoadingBar();
+      loadingMsg.textContent = `戦闘アニメ ${i}/${ANIM_FRAMES}`;
     }
     // 音
     for(let k in SOUNDS){
       sounds[k] = new Audio(SOUNDS[k]);
       sounds[k].volume = (k.includes("bgm") ? 0.3 : 1.0);
+      loaded++; updateLoadingBar();
+      loadingMsg.textContent = `${k}音声 読み込み中...`;
     }
     assetsLoaded = true;
+    // ローディング終了→画面切替
+    setTimeout(()=>{
+      document.getElementById("loadingScreen").style.display="none";
+      document.getElementById("container").style.display="flex";
+      // 必要な初期化処理を呼び出す（上で呼んでいるのでここは空でもOK）
+    },350);
+    function updateLoadingBar() {
+      loadingBar.style.width = Math.round((loaded/total)*100) + "%";
+    }
   }
+
   function loadImage(src){
     return new Promise((res,rej)=>{
       let img=new Image();
@@ -225,7 +279,6 @@
     get_img() {
       let img = images[this.name];
       if (this.owner === "ai") {
-        // 上下反転
         let cvs=document.createElement("canvas");
         cvs.width = img.width; cvs.height = img.height;
         let c=cvs.getContext("2d");
@@ -297,10 +350,7 @@
     remove_piece(piece){
       this.grid[piece.x][piece.y]=null;
       piece.alive=false;
-      // 決着時はwadaikoのみ（2重防止）
-      if (!result) {
-        playSE("koma");
-      }
+      if (!result) playSE("koma");
       if(piece.name==="ou") checkResult();
     }
     move_piece(piece, nx, ny){
@@ -330,7 +380,6 @@
 
   function drawAll(){
     ctx.clearRect(0,0,CANVAS_SIZE,CANVAS_SIZE);
-    // 盤面
     ctx.strokeStyle = "#bbb";
     ctx.lineWidth = 4;
     for(let i=0;i<=5;i++){
@@ -339,7 +388,6 @@
       ctx.beginPath();
       ctx.moveTo(0,i*TILE); ctx.lineTo(5*TILE,i*TILE); ctx.stroke();
     }
-    // AIハイライト
     if(aiHighlightPiece){
       ctx.save();
       ctx.strokeStyle="#f00"; ctx.lineWidth=7;
@@ -355,7 +403,6 @@
       }
       ctx.restore();
     }
-    // 選択ハイライト
     if(selectedPiece && turn==="player"){
       ctx.save();
       for(let [mx,my] of selectedMoves){
@@ -365,7 +412,6 @@
       }
       ctx.restore();
     }
-    // 駒
     for(let piece of board.all_pieces()){
       let px=piece.x*TILE+16, py=piece.y*TILE+16;
       let img=piece.get_img();
@@ -375,24 +421,20 @@
       ctx.textAlign="right";
       ctx.fillText(piece.hp, px+76, py+30);
     }
-    // ターン
     ctx.font="bold 38px meiryo, sans-serif";
     ctx.fillStyle="#fff";
     ctx.textAlign="left";
     ctx.fillText("ターン: "+Math.min(turnCount,10)+"/10",14,44);
-    // パラメータ
     ctx.font="bold 27px meiryo, sans-serif";
     ctx.fillStyle="#ffe066";
     ctx.fillText(lastPlayerParam,10,CANVAS_SIZE-18);
     ctx.fillStyle="#55ffff";
     ctx.fillText(lastAiParam,10,CANVAS_SIZE-54);
-    // 勝敗・続けますかダイアログ
     if(result){
       showContinueDialog(result);
     }
   }
 
-  // 画面リサイズ対応
   function resizeCanvas(){
     let w = window.innerWidth*0.96;
     let h = window.innerHeight*0.83;
@@ -401,7 +443,6 @@
     canvas.style.height = size+"px";
   }
 
-  // 駒パラメータ表示
   function showPieceParam(piece){
     if(!piece) { lastPlayerParam=""; lastAiParam=""; return;}
     let s = PIECE_STATS[piece.name];
@@ -411,7 +452,6 @@
     drawAll();
   }
 
-  // 駒クリック時
   function handleCanvasClick(e){
     if(result||showContinue) return;
     if(aiThinking||battleAnimPlaying) return;
@@ -423,33 +463,27 @@
     if(!(0<=gx&&gx<5&&0<=gy&&gy<5)) return;
 
     let clickedPiece = board.get_piece(gx,gy);
-    // 1. どちらの番か
     if(turn==="player"){
-      // (1) 未選択→自駒なら選択＋移動範囲
       if(!selectedPiece && clickedPiece && clickedPiece.owner==="player"){
         selectedPiece = clickedPiece;
         selectedMoves = selectedPiece.get_moves(board);
         showPieceParam(clickedPiece);
         return;
       }
-      // (2) 自駒再クリック→再選択
       if(selectedPiece && clickedPiece && clickedPiece.owner==="player"){
         selectedPiece = clickedPiece;
         selectedMoves = selectedPiece.get_moves(board);
         showPieceParam(clickedPiece);
         return;
       }
-      // (3) AI駒クリック→移動範囲内なら攻撃、それ以外はパラメータのみ
       if(clickedPiece && clickedPiece.owner==="ai"){
         if(selectedPiece){
           let moves = selectedPiece.get_moves(board);
           let ok = moves.some(([x,y])=>x===gx&&y===gy);
           if(ok){
-            // 戦闘アニメ→攻撃
             battleAnimPlaying=true;
             playBGM("battle_bgm");
             playBattleAnim(()=>{
-              // 戦闘SEはアニメ内で1回だけ再生する
               clickedPiece.hp -= selectedPiece.atk;
               if(clickedPiece.hp>0) selectedPiece.hp -= clickedPiece.atk;
               if(clickedPiece.hp<=0) board.remove_piece(clickedPiece);
@@ -465,16 +499,13 @@
             return;
           }
         }
-        // 移動範囲外→パラメータのみ
         showPieceParam(clickedPiece);
         return;
       }
-      // (4) 何もないマスクリック→移動可能なら移動、不可なら無反応
       if(selectedPiece && !clickedPiece){
         let moves = selectedPiece.get_moves(board);
         let ok = moves.some(([x,y])=>x===gx&&y===gy);
         if(ok){
-          // 歩の成金
           if(selectedPiece.name==="fu" && ((selectedPiece.owner==="player"&&gy===1)||(selectedPiece.owner==="ai"&&gy===3))){
             playSE("hu_nari");
             selectedPiece.promote();
@@ -490,19 +521,16 @@
           return;
         }
       }
-      // (5) AI駒選択時（未選択時やパラメータ表示のみ希望時）→パラメータ表示
       if(clickedPiece && clickedPiece.owner==="ai"){
         showPieceParam(clickedPiece);
         return;
       }
-      // (6) それ以外→選択解除
       selectedPiece=null; selectedMoves=[];
       lastPlayerParam=""; lastAiParam="";
       drawAll();
     }
   }
 
-  // 戦闘アニメ
   function playBattleAnim(cb){
     let idx=0;
     function step(){
@@ -516,7 +544,6 @@
     step();
   }
 
-  // AIターン実行
   function endPlayerTurn(){
     setTimeout(()=>{
       showAiOverlay(true);
@@ -535,89 +562,82 @@
     document.getElementById("aiTurnOverlay").style.display = flag ? "flex" : "none";
   }
 
-function aiMove(cb){
-  // 決着済みなら即return
-  if(result) { cb&&cb(); return; }
-
-  // 攻撃手優先
-  let aicand = board.all_pieces().filter(p=>p.owner==="ai");
-  for(let piece of aicand){
-    let moves = piece.get_moves(board);
-    for(let [mx,my] of moves){
-      let t=board.get_piece(mx,my);
-      if(t && t.owner==="player"){
-        aiHighlightPiece = piece;
-        aiHighlightMoves = moves;
-        drawAll();
-        setTimeout(()=>{
-          if(result) { aiHighlightPiece=null; aiHighlightMoves=[]; cb&&cb(); return; }
-          aiHighlightPiece=null; aiHighlightMoves=[];
-          battleAnimPlaying=true;
-          playBGM("battle_bgm");
-          playBattleAnim(()=>{
-            t.hp -= piece.atk;
-            if(t.hp>0) piece.hp -= t.atk;
-            if(t.hp<=0) board.remove_piece(t);
-            if(piece.hp<=0) board.remove_piece(piece);
-            playBGM("board_bgm");
-            if(result) { battleAnimPlaying=false; drawAll(); cb&&cb(); return; }
+  function aiMove(cb){
+    if(result) { cb&&cb(); return; }
+    let aicand = board.all_pieces().filter(p=>p.owner==="ai");
+    for(let piece of aicand){
+      let moves = piece.get_moves(board);
+      for(let [mx,my] of moves){
+        let t=board.get_piece(mx,my);
+        if(t && t.owner==="player"){
+          aiHighlightPiece = piece;
+          aiHighlightMoves = moves;
+          drawAll();
+          setTimeout(()=>{
+            if(result) { aiHighlightPiece=null; aiHighlightMoves=[]; cb&&cb(); return; }
+            aiHighlightPiece=null; aiHighlightMoves=[];
+            battleAnimPlaying=true;
+            playBGM("battle_bgm");
+            playBattleAnim(()=>{
+              t.hp -= piece.atk;
+              if(t.hp>0) piece.hp -= t.atk;
+              if(t.hp<=0) board.remove_piece(t);
+              if(piece.hp<=0) board.remove_piece(piece);
+              playBGM("board_bgm");
+              if(result) { battleAnimPlaying=false; drawAll(); cb&&cb(); return; }
+              turn="player";
+              turnCount++;
+              selectedPiece=null; selectedMoves=[];
+              lastPlayerParam=""; lastAiParam="";
+              checkResult();
+              battleAnimPlaying=false;
+              cb&&cb();
+            });
+          }, 900);
+          return;
+        }
+      }
+    }
+    let movables = aicand.slice();
+    shuffle(movables);
+    for(let piece of movables){
+      let moves = piece.get_moves(board);
+      shuffle(moves);
+      for(let [mx,my] of moves){
+        if(board.get_piece(mx,my)==null){
+          aiHighlightPiece=piece; aiHighlightMoves=moves;
+          drawAll();
+          setTimeout(()=>{
+            if(result) { aiHighlightPiece=null; aiHighlightMoves=[]; cb&&cb(); return; }
+            aiHighlightPiece=null; aiHighlightMoves=[];
+            if(piece.name==="fu" && piece.owner==="ai" && my===3){
+              playSE("hu_nari"); piece.promote();
+            } else {
+              playSE("koma_idou");
+            }
+            board.move_piece(piece, mx, my);
+            if(result) { drawAll(); cb&&cb(); return; }
             turn="player";
             turnCount++;
             selectedPiece=null; selectedMoves=[];
             lastPlayerParam=""; lastAiParam="";
             checkResult();
-            battleAnimPlaying=false;
             cb&&cb();
-          });
-        }, 900);
-        return;
+          }, 900);
+          return;
+        }
       }
     }
+    turn="player"; turnCount++;
+    cb&&cb();
   }
-  // 攻撃手なければ適当に動く
-  let movables = aicand.slice();
-  shuffle(movables);
-  for(let piece of movables){
-    let moves = piece.get_moves(board);
-    shuffle(moves);
-    for(let [mx,my] of moves){
-      if(board.get_piece(mx,my)==null){
-        aiHighlightPiece=piece; aiHighlightMoves=moves;
-        drawAll();
-        setTimeout(()=>{
-          if(result) { aiHighlightPiece=null; aiHighlightMoves=[]; cb&&cb(); return; }
-          aiHighlightPiece=null; aiHighlightMoves=[];
-          // 歩の成金
-          if(piece.name==="fu" && piece.owner==="ai" && my===3){
-            playSE("hu_nari"); piece.promote();
-          } else {
-            playSE("koma_idou");
-          }
-          board.move_piece(piece, mx, my);
-          if(result) { drawAll(); cb&&cb(); return; }
-          turn="player";
-          turnCount++;
-          selectedPiece=null; selectedMoves=[];
-          lastPlayerParam=""; lastAiParam="";
-          checkResult();
-          cb&&cb();
-        }, 900);
-        return;
-      }
-    }
-  }
-  // 動けなければそのままターン終了
-  turn="player"; turnCount++;
-  cb&&cb();
-}
 
   function shuffle(a){ for(let i=a.length-1;i>0;i--){let j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}}
 
-  // --------- BGM/SE ---------
   function playBGM(name){
     try{
       if(bgmNow&&sounds[bgmNow]){sounds[bgmNow].pause(); sounds[bgmNow].currentTime=0;}
-      if(name==="board_bgm" && result) return; // 決着時は将棋BGM再開しない
+      if(name==="board_bgm" && result) return;
       sounds[name].loop=true;
       sounds[name].play();
       bgmNow=name;
@@ -627,7 +647,6 @@ function aiMove(cb){
     try{ sounds[name].currentTime=0; sounds[name].play(); }catch(e){}
   }
 
-  // --------- 勝敗判定・ダイアログ ---------
   function checkResult(){
     let ai_ou_alive = board.all_pieces().some(p=>p.name==="ou"&&p.owner==="ai");
     let player_ou_alive = board.all_pieces().some(p=>p.name==="ou"&&p.owner==="player");
