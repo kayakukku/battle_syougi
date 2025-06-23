@@ -412,24 +412,43 @@
       }
       ctx.restore();
     }
+    // --- HP描画：黒フチ＋赤 ---
     for(let piece of board.all_pieces()){
       let px=piece.x*TILE+16, py=piece.y*TILE+16;
       let img=piece.get_img();
       ctx.drawImage(img,px,py,PIECE_SIZE,PIECE_SIZE);
-      ctx.font="bold 30px sans-serif";
-      ctx.fillStyle="#f00";
-      ctx.textAlign="right";
+      ctx.font = "bold 30px sans-serif";
+      ctx.textAlign = "right";
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = "#181818";
+      ctx.strokeText(piece.hp, px+76, py+30);
+      ctx.fillStyle = "#f00";
       ctx.fillText(piece.hp, px+76, py+30);
     }
-    ctx.font="bold 38px meiryo, sans-serif";
-    ctx.fillStyle="#fff";
-    ctx.textAlign="left";
-    ctx.fillText("ターン: "+Math.min(turnCount,10)+"/10",14,44);
-    ctx.font="bold 27px meiryo, sans-serif";
-    ctx.fillStyle="#ffe066";
-    ctx.fillText(lastPlayerParam,10,CANVAS_SIZE-18);
-    ctx.fillStyle="#55ffff";
-    ctx.fillText(lastAiParam,10,CANVAS_SIZE-54);
+    // --- ターン表示・パラメータ：黒フチ＋色 ---
+    // ターン表示（白＋黒フチ）
+    ctx.font = "bold 38px meiryo, sans-serif";
+    ctx.textAlign = "left";
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = "#181818";
+    ctx.strokeText("ターン: "+Math.min(turnCount,10)+"/10", 14, 44);
+    ctx.fillStyle = "#fff";
+    ctx.fillText("ターン: "+Math.min(turnCount,10)+"/10", 14, 44);
+
+    // プレイヤーパラメータ（黄＋黒フチ）
+    ctx.font = "bold 27px meiryo, sans-serif";
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = "#181818";
+    ctx.strokeText(lastPlayerParam, 10, CANVAS_SIZE-18);
+    ctx.fillStyle = "#ffe066";
+    ctx.fillText(lastPlayerParam, 10, CANVAS_SIZE-18);
+
+    // AIパラメータ（水色＋黒フチ）
+    ctx.strokeStyle = "#181818";
+    ctx.strokeText(lastAiParam, 10, CANVAS_SIZE-54);
+    ctx.fillStyle = "#55ffff";
+    ctx.fillText(lastAiParam, 10, CANVAS_SIZE-54);
+
     if(result){
       showContinueDialog(result);
     }
